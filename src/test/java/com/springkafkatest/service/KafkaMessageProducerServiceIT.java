@@ -1,11 +1,11 @@
 package com.springkafkatest.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springkafkatest.config.KafkaTestConfiguration;
 import com.springkafkatest.model.event.UpdatedBrandEvent;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.slf4j.Logger;
@@ -16,7 +16,8 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.KafkaMessageListenerContainer;
 import org.springframework.kafka.listener.MessageListener;
-import org.springframework.kafka.test.rule.EmbeddedKafkaRule;
+import org.springframework.kafka.test.EmbeddedKafkaBroker;
+import org.springframework.kafka.test.context.EmbeddedKafka;
 import org.springframework.kafka.test.utils.ContainerTestUtils;
 import org.springframework.kafka.test.utils.KafkaTestUtils;
 import org.springframework.test.annotation.DirtiesContext;
@@ -34,9 +35,10 @@ import static org.springframework.kafka.test.assertj.KafkaConditions.key;
 import static org.springframework.kafka.test.hamcrest.KafkaMatchers.hasValue;
 
 
-@RunWith(SpringRunner.class)
 @DirtiesContext
-@SpringBootTest()
+@RunWith(SpringRunner.class)
+@EmbeddedKafka(partitions = 1)
+@SpringBootTest(classes = KafkaTestConfiguration.class)
 public class  KafkaMessageProducerServiceIT {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(KafkaMessageProducerServiceIT.class);
@@ -46,23 +48,20 @@ public class  KafkaMessageProducerServiceIT {
     @Autowired
     private KafkaMessageProducerService kafkaMessageProducerService;
 
+    @Autowired
+    private EmbeddedKafkaBroker embeddedKafkaBroker;
+
     private KafkaMessageListenerContainer<String, UpdatedBrandEvent> container;
 
     private BlockingQueue<ConsumerRecord<String, String>> consumerRecords;
-
-    @ClassRule
-    public static EmbeddedKafkaRule embeddedKafka = new EmbeddedKafkaRule(1, true, TOPIC_NAME);
 
     @Before
     public void setUp() {
         consumerRecords = new LinkedBlockingQueue<>();
 
-        ContainerProperties containerProperties = new ContainerProperties(TOPIC_NAME);
-
-        Map<String, Object> consumerProperties = KafkaTestUtils.consumerProps(
-                "sender", "false", embeddedKafka.getEmbeddedKafka());
-
-        DefaultKafkaConsumerFactory<String, UpdatedBrandEvent> consumer = new DefaultKafkaConsumerFactory<>(consumerProperties);
+        final var containerProperties = new ContainerProperties(TOPIC_NAME);
+        final var consumerProperties = KafkaTestUtils.consumerProps("sender", "false", embeddedKafkaBroker);
+        final var consumer = new DefaultKafkaConsumerFactory<>(consumerProperties);
 
         container = new KafkaMessageListenerContainer<>(consumer, containerProperties);
         container.setupMessageListener((MessageListener<String, String>) record -> {
@@ -71,7 +70,7 @@ public class  KafkaMessageProducerServiceIT {
         });
         container.start();
 
-        ContainerTestUtils.waitForAssignment(container, embeddedKafka.getEmbeddedKafka().getPartitionsPerTopic());
+        ContainerTestUtils.waitForAssignment(container, embeddedKafkaBroker.getPartitionsPerTopic());
     }
 
     @After
